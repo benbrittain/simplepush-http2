@@ -1,0 +1,72 @@
+<html>
+<head>
+
+<title>
+    Test application for webpush
+</title>
+
+<script>
+
+function register() {
+    var req = navigator.push.register();
+
+    var xhr = new XMLHttpRequest();
+    console.log(req);
+    req.onsuccess = function(e) {
+        console.log('provide returned channel to application');
+        console.log(JSON.stringify(this.result));
+        xhr.open("POST", 'https://localhost:8000/register?channel=' + req.result);
+        xhr.onerror = function() {
+            console.log('broken');
+        }
+        xhr.onload = function() {
+            console.log('success');
+        }
+        xhr.send();
+    }
+
+    req.onerror = function(e) {
+        alert("Registration error");
+    }
+}
+
+//function updateNotifications() {
+//    console.log('updating notificatons');
+//
+//    function createRegistrationUI(registration) {
+//        var h = document.createElement("p");
+//        t = document.createTextNode(registration.pushEndpoint);
+//        h.appendChild(t);
+//
+//
+//        var div = document.createElement("div");
+//        div.appendChild(button);
+//        div.appendChild(h);
+//
+//        return div;
+//    }
+//
+//    document.getElementById("registrations").innerHTML = "";
+//
+//    var req = navigator.push.registrations();
+//    req.onsuccess = function(e) {
+//        var registrations = e.target.result;
+//        for (var i = 0; i < registrations.length; ++i) {
+//            var div = createRegistrationUI(registrations[i]);
+//            document.getElementById("registrations").appendChild(div);
+//        }
+//    }
+//}
+
+
+
+</script>
+</head>
+
+<body>
+
+Press if you want a push every 5s:
+<input id="register" type="button" value="register for push notifications" onclick="register();" />
+</body>
+
+</html>
