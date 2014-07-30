@@ -6,10 +6,9 @@
 "use strict"
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
-
 var fs = require('fs');
-//var http2 = require('http2')
-var http2 = require('/home/ben/workspace/mozilla-central/testing/xpcshell/node-http2')
+var http2 = require('http2')
+//var http2 = require('/home/ben/workspace/mozilla-central/testing/xpcshell/node-http2')
 //var uuid = require('node-uuid');
 
 
@@ -20,13 +19,6 @@ var options = {
     key: fs.readFileSync('./config/server.key'),
     cert: fs.readFileSync('./config/server.crt')
 };
-//var options = {
-//  key: fs.readFileSync('/home/ben/workspace/mozilla-central/testing/xpcshell/moz-spdy/spdy-key.pem'),
-//  cert: fs.readFileSync('/home/ben/workspace/mozilla-central/testing/xpcshell/moz-spdy/spdy-cert.pem'),
-//  ca: fs.readFileSync('/home/ben/workspace/mozilla-central/testing/xpcshell/moz-spdy/spdy-ca.pem'),
-//};
-
-
 
 function uniqueURL() {
     // TODO: better URI
@@ -47,11 +39,8 @@ Session.prototype.createChannel= function createChannel() {
     var id = uniqueURL();
     this.channels.push(' ' + id);
     route(id, 'channel', this);
-    console.log(routes);
     return id;
 };
-
-//Session.prototype = Object.create(Session.prototype, { constructor: { value: Session } })
 
 var routes = {};
 
@@ -62,17 +51,19 @@ function route (path, type, sess) {
     routes[path] = {'type': type, 'session': sess}
 }
 
-
 var server = http2.createServer(options, function(request, response) {
     var url = request.url.substring(1);
+    //console.log(request);
+    console.log("request: " + url + " m: " + request.method)
     if (request.httpVersion != '2.0'){
         console.error('wtf');
     }
+
     // If not accessing a monitor or channel URI, might be a new device
-    console.log(request.method);
     if (request.url == '/' && request.method == 'POST'){
         console.log("New Device connecting");
-        // Initialize Push Frame
+
+        // Initialize Session
         var sess = new Session();
         response.writeHead(200, {'Content-Type': 'text/plain',
                                  'Link': '<' + sess.monitorURL +'>;rel="...:push:monitor",' +
@@ -82,40 +73,56 @@ var server = http2.createServer(options, function(request, response) {
         // Add the monitor URLs to the routes object
         route(sess.monitorURL, 'monitor', sess);
         route(sess.channelURL, 'channel_creator', sess);
-        console.log(routes);
         response.end();
 
     } else if (request.method == 'GET' && routes[url]) {
         if(routes[url].type == 'monitor') {
-            // start of device monitoring for push requests
-            console.log('get, monitor');
-            response.writeHead(200)
-                var push = response.push(JSON.stringify(options));
 
-            for(var i = 1; i < 5; i++){
-                console.log(i);
-                ////            push.writeContinue(i);
-                fs.createReadStream('./config/'+ i).pipe(push);
-            }
+            // Start of device monitoring for push requests
+            console.log('GET, monitorURL: ' + url);
+            routes[url].session.response = response;
+        } else {
+            response.writeHead(404);
         }
-
     } else if (request.method == 'POST' && routes[url]){
         if (routes[url].type == 'channel_creator') {
-            var session = routes[url].session;
-        console.log('post, channel_creator');
-        var channelURI = session.createChannel()
-        console.log(channelURI + ' new channel');
-        response.writeHead(201, { 'Location' : channelURI,
-                                  'Expires': new Date()});
-        }
-        response.end();
+            console.log('post, channel_creator');
 
-    } else if (request.method == 'POST' && routes[url].type == 'channel') {
-        console.log(routes[url].type);
-        console.log('post, channel');
+            // Create a channel for the session
+            var session = routes[url].session;
+            var channelURI = session.createChannel();
+
+            // Initialize the Push for the new channel
+            var push = session.response.push('/'+channelURI);
+            console.log(channelURI + ' new channel');
+            push.writeHead(200, {
+                'content-type': 'text/plain',
+                'pushed' : 'yes',
+                'X-Connection-Http2': 'yes'
+            });
+            console.log('channelURI for pushing too: ' + channelURI);
+            routes[channelURI].push = push;
+
+            // Respond to POST request with the location of the new channelURI
+            response.writeHead(201, {
+                'Location' : "https://" + request.host + '/' + channelURI + "/",
+                'Expires': new Date()
+            });
+            response.end();
+        }
+    } else if (request.method == 'PUT' && routes[url].type == 'channel') {
+        console.log('PUT: ' + url);
+        request.on('data', function (chunk) {
+            var push = routes[url].push;
+            console.log('writing \"' + chunk + '\" to ' + url)
+            push.write(chunk);
+        });
+    } else {
+        console.log(request);
+        response.writeHead(404);
+        response.end();
     }
 
 });
-
 
 server.listen(default_port);
